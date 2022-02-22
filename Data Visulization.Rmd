@@ -1,0 +1,289 @@
+---
+title: "435 Final Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(leaflet)
+library(choroplethrZip)
+library(ggplot2)
+```
+
+```{r}
+TwinCityListings <- Twincity_V2_0
+```
+
+```{r}
+TwinCityListings %>% 
+  filter(!is.na(suburb)) %>% 
+  group_by(city, suburb) %>% 
+  count()
+```
+```{r}
+TwinCityListings <- TwinCityListings %>% 
+  filter(!is.na(suburb)) %>% 
+  mutate(price_per_person = price / as.numeric(accommodates))
+
+# AvgPPP <- TwinCityListings %>% 
+#   group_by(city, suburb) %>% 
+#   summarise(avg_price_per_person = mean(price_per_person))
+
+
+AvgPPP <- TwinCityListings %>% 
+  mutate(count = 1) %>%
+  group_by(city, suburb) %>% 
+  summarise(avg_price_per_person = mean(price_per_person), count = sum(count))
+
+AvgPPP %>% 
+  arrange(desc(avg_price_per_person))
+```
+
+```{r}
+AvgPPP %>% 
+  filter(city == "Saint Paul") %>% 
+  arrange(desc(avg_price_per_person))
+```
+
+
+
+```{r}
+listings <- X01_listings
+```
+
+```{r}
+newListings = do.call(cbind, list(listings, zipCode))
+newListings$price <- as.numeric(gsub(",", "", substring(newListings$price, 2)))
+```
+
+```{r}
+newListings <- newListings %>% 
+  filter(zip_code > 55000) %>% 
+  mutate(price_per_person = price / as.numeric(accommodates))
+```
+
+```{r}
+newListings %>% 
+  group_by(neighbourhood_cleansed) %>% 
+  count()
+```
+
+```{r}
+newListings %>% 
+  group_by(zip_code) %>% 
+  count() %>% 
+  filter(n > 5)
+```
+```{r}
+newListings %>% 
+  mutate(room_type = ifelse(room_type == "Hotel room" | room_type == "Shared room", "Private room", room_type)) %>% 
+  group_by(room_type) %>% 
+  count()
+
+newListingsUpdated <- newListings %>% 
+  mutate(room_type = ifelse(room_type == "Hotel room" | room_type == "Shared room", "Private room", room_type))
+```
+
+
+```{r}
+# library(devtools)
+# install_github('arilamstein/choroplethrZip@v1.5.0')
+```
+
+
+```{r}
+# zipReviews <- newListings %>% 
+#   filter(zip_code > 55000) %>% 
+#   group_by(zip_code) %>% 
+#   summarise(avg_loc_review = mean(review_scores_location, na.rm = TRUE))
+
+zipReviews <- newListingsUp %>% 
+  mutate(count = 1) %>%
+  group_by(zip_code) %>% 
+  summarise(avg_loc_review = mean(review_scores_location, na.rm = TRUE), count = sum(count)) %>% 
+  filter(count > 1)
+  
+
+colnames(zipReviews) <- c("region","value")
+zipReviews$region <- as.character(zipReviews$region)
+mn_fips = c(27003, 27019, 27025, 27037, 27053, 27059, 27079, 27095, 27123, 27139, 27141, 27143, 27163, 27171)
+
+# Remove LeSueur(27079), Sibley(27143)
+mn_fips_new = c(27003, 27019, 27025, 27037, 27053, 27059, 27095, 27123, 27139, 27141, 27163, 27171)
+
+#county_zoom = mn_fips
+zip_zoom = zipReviews$region
+
+zips <- pull(zipReviews, region)
+
+p1 <- zip_choropleth(zipReviews, county_zoom = mn_fips_new,
+title = "Location Review Scores by Region",
+legend = "Average Score") + ggtitle("Which area is the best?",
+          subtitle = "Map showing Average Location Score by Area") +
+  theme(plot.title = element_text(face = "bold")) +
+  theme(plot.subtitle = element_text(face = "bold", color = "grey35")) +
+  theme(plot.caption = element_text(color = "grey68"))+scale_color_gradient(low="#d3cbcb", high="#852eaa")+ scale_fill_brewer("Location Review Score",palette = 4)
+```
+
+
+```{r}
+newListings %>% 
+  mutate(room_type = ifelse(room_type == "Hotel room" | room_type == "Shared room", "Private room", room_type)) %>% 
+  group_by(room_type) %>% 
+  count()
+  
+  mutate(room_type = ifelse(property_type == "Entire serviced apartment"|property_type == "Room in aparthotel", "Serviced Apartment", room_type)) %>%
+  mutate(room_type = ifelse(property_type == "Entire rental unit"|property_type == "Entire guest suite", "Entire rental unit", room_type)) %>% 
+  mutate(room_type = ifelse(property_type == "Room in boutique hotel"|property_type == "Room in hotel","Hotel room",room_type)) %>% 
+  mutate(room_type = ifelse(room_type == "Entire home/apt","Entire House", room_type)) %>% 
+  group_by(room_type) %>% 
+  count()
+  select(zip_code, price, price_per_person)
+```
+
+```{r}
+write.csv(newListings, "newListings")
+```
+
+
+
+```{r}
+#Which area is more expensive?
+zipPricesEntireRoom <- newListingsUpdated %>% 
+  filter(room_type == "Entire home/apt") %>% 
+  mutate(count = 1) %>%
+  group_by(zip_code) %>% 
+  summarise(avg_price_per_person = mean(price_per_person, na.rm = TRUE), count = sum(count)) %>%
+  filter(count > 1)  # Prevent outliers
+  
+
+colnames(zipPricesEntireRoom) <- c("region","value")
+zipPricesEntireRoom$region <- as.character(zipPricesEntireRoom$region)
+
+zip_choropleth(zipPricesEntireRoom,
+county_zoom = mn_fips_new,
+title = "Average Price by Region",
+legend = "Average Score") + ggtitle("Which area is expensive?",
+          subtitle = "Map showing Average Price by Area") +
+  theme(plot.title = element_text(face = "bold")) +
+  theme(plot.subtitle = element_text(face = "bold", color = "grey35")) +
+  theme(plot.caption = element_text(color = "grey68"))+scale_color_gradient(low="#d3cbcb", high="#852eaa")+ scale_fill_brewer("Average Price",palette=4)
+
+
+###################################################
+
+zipPricesPrivateRoom <- newListingsUpdated %>% 
+  filter(room_type == "Private room") %>% 
+  mutate(count = 1) %>%
+  group_by(zip_code) %>% 
+  summarise(avg_price_per_person = mean(price_per_person, na.rm = TRUE), count = sum(count))
+  #filter(count > 1)  # Prevent outliers
+  
+
+colnames(zipPricesPrivateRoom) <- c("region","value")
+zipPricesPrivateRoom$region <- as.character(zipPricesPrivateRoom$region)
+
+zip_choropleth(zipPricesPrivateRoom,
+county_zoom = mn_fips_new,
+title = "Average Price by Region",
+legend = "Average Score") + ggtitle("Which area is expensive?",
+          subtitle = "Map showing Average Price by Area") +
+  theme(plot.title = element_text(face = "bold")) +
+  theme(plot.subtitle = element_text(face = "bold", color = "grey35")) +
+  theme(plot.caption = element_text(color = "grey68"))+scale_color_gradient(low="#d3cbcb", high="#852eaa")+ scale_fill_brewer("Average Price",palette=4)
+```
+
+
+
+
+```{r}
+p1
+p2
+```
+
+
+```{r}
+listings %>% 
+  group_by(neighbourhood_cleansed) %>% 
+  count()
+```
+
+
+```{r}
+library(rgdal)
+MNneighbourhoods <- rgdal::readOGR("~/Desktop/untitled folder 2/07_neighbourhoods.geojson")
+```
+
+```{r}
+topoData <- readLines("~/Desktop/untitled folder 2/07_neighbourhoods.geojson") %>% paste(collapse = "\n")
+
+leaflet() %>% setView(lng = -94.6859, lat = 46.7296, zoom = 6) %>%
+  addTiles() %>%
+  addTopoJSON(topoData, weight = 1, color = "#444444", fill = FALSE)
+```
+
+
+
+```{r}
+Twincity_id_num <- Twincity_V2_0$id
+
+Twincity_ids <- X02_calendar %>% 
+  filter(listing_id %in% Twincity_id_num)
+
+Twincity_ids$day_of_week <- weekdays(Twincity_ids$date)
+Twincity_ids$year <- format(Twincity_ids$date, "%y")
+Twincity_ids$month <- format(Twincity_ids$date, "%m")
+Twincity_ids$day <- format(Twincity_ids$date, "%d")
+
+
+write.csv(Twincity_ids, "Twincity_Calendar.csv")
+```
+
+
+```{r}
+Twincity_Calendar$price <- as.numeric(substring(Twincity_Calendar$price, 2))
+Twincity_Calendar$adjusted_price <- as.numeric(substring(Twincity_Calendar$adjusted_price, 2))
+
+# write.csv(Twincity_Calendar, "Twincity_cleaned.csv")
+
+Twincity_Calendar %>% 
+  filter(price != adjusted_price)
+
+Twincity_Calendar %>% 
+  group_by(day_of_week) %>% 
+  summarise(averagePrice = mean(adjusted_price, na.rm = TRUE))
+
+Twincity_Calendar %>% 
+  group_by(month) %>% 
+  summarise(averagePrice = mean(adjusted_price, na.rm = TRUE))
+
+
+temp <- Twincity_Calendar %>% 
+  group_by(day_of_week, listing_id) %>% 
+  summarise(averagePrice = mean(adjusted_price, na.rm = TRUE))
+
+Twincity_Calendar %>% 
+  group_by(month) %>% 
+  summarise(averagePrice = mean(adjusted_price, na.rm = TRUE))
+
+Twincity_Calendar %>% 
+  ggplot(aes(x = day_of_week, y = adjusted_price)) +
+  geom_boxplot()
+
+Twincity_Calendar %>% 
+  ggplot(aes(x = month, y = adjusted_price)) +
+  geom_line()
+```
+
+```{r}
+PriceTrend <- Twincity_Calendar %>% 
+  group_by(month, day_of_week) %>% 
+  summarise(averagePrice = mean(adjusted_price, na.rm = TRUE))
+
+write.csv(PriceTrend, "PriceTrend.csv")
+```
+
